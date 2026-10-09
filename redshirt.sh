@@ -7,11 +7,26 @@ INBOX="$WORKDIR/tasks/$NAME/inbox"
 OUTBOX="$WORKDIR/tasks/$NAME/outbox"
 DONE="$WORKDIR/tasks/$NAME/done"
 END_TIME=$((STARTED + HOURS * 3600))
+CURRENT_TASK="none"
 
 mkdir -p "$INBOX" "$OUTBOX" "$DONE"
 
-# Heartbeat
-echo "$(date -u +%FT%TZ) alive" > "$WORKDIR/tasks/$NAME/heartbeat.md"
+# Heartbeat format: machine-readable frontmatter the captain's board reads.
+# last: ISO-8601 UTC of this beat; started/hours define the timebox.
+heartbeat() {
+  cat > "$WORKDIR/tasks/$NAME/heartbeat.md" << EOF
+---
+node: $NAME
+last: $(date -u +%FT%TZ)
+started: $STARTED
+hours: $HOURS
+task: $CURRENT_TASK
+---
+alive
+EOF
+}
+
+heartbeat
 
 while [ "$(date -u +%s)" -lt "$END_TIME" ]; do
   cd "$WORKDIR"
@@ -25,6 +40,8 @@ while [ "$(date -u +%s)" -lt "$END_TIME" ]; do
 
     slug=$(basename "$taskfile" .md)
     echo "[redshirt] Claimed task: $slug"
+    CURRENT_TASK="$slug"
+    heartbeat
 
     # Parse task: look for "claude:" or "run:" line
     CLAUDE_PROMPT=$(grep -m1 '^claude:' "$taskfile" | sed 's/^claude: *//')
@@ -56,6 +73,7 @@ while [ "$(date -u +%s)" -lt "$END_TIME" ]; do
 
     mv "$taskfile" "$DONE/"
     rm -f "$taskfile.claimed"
+    CURRENT_TASK="none"
     git add -A
     git -c user.name="redshirt-$NAME" -c user.email="redshirt@superinstance.ai" commit -qm "redshirt $NAME: done $slug" 2>/dev/null || true
     git push -q 2>/dev/null || true
@@ -63,7 +81,7 @@ while [ "$(date -u +%s)" -lt "$END_TIME" ]; do
   done
 
   # Heartbeat every loop
-  echo "$(date -u +%FT%TZ) alive" > "$WORKDIR/tasks/$NAME/heartbeat.md"
+  heartbeat
   cd "$WORKDIR" && git add "tasks/$NAME/heartbeat.md" && git -c user.name="redshirt-$NAME" -c user.email="redshirt@superinstance.ai" commit -qm "heartbeat $NAME" 2>/dev/null || true
   git push -q 2>/dev/null || true
 
