@@ -8,15 +8,45 @@
 # explicit witnessed yes. SSH shows you the fingerprint before the yes;
 # this is the one-page equivalent.
 #
-# Usage: curl -sSL https://raw.githubusercontent.com/SuperInstance/redshirt/main/install.sh | bash -s <name> <hours>
+# Usage: curl -sSL https://raw.githubusercontent.com/SuperInstance/redshirt/main/install.sh | bash -s <name> <hours> [options]
+#
+# Options:
+#   --allowlist "git curl python3"  command allowlist for tasks (default: "git curl python3 claude")
+#   --net / --no-net                task network access (default: --no-net)
+#   --reap-after SECONDS             stale-claim threshold for the scavenger (default: 300)
+#   --no-wake                        disable the wake trigger (plain 60s polling)
+#   --no-killswitch                  disable the external dead-man's switch (NOT recommended:
+#                                    the timebox becomes a promise again)
 #
 # Non-interactive escape hatch: REDSHIRT_ASSUME_YES=1 skips the witnessed
 # yes ONLY when stdin is not a terminal. Setting it is itself the grant —
 # you are on record in your shell history.
 set -e
 
-NAME="${1:?Usage: bash -s <name> <hours>}"
-HOURS="${2:?Usage: bash -s <name> <hours>}"
+NAME="${1:?Usage: bash -s <name> <hours> [options]}"
+HOURS="${2:?Usage: bash -s <name> <hours> [options]}"
+shift 2 || true
+
+ALLOWLIST="git curl python3 claude"
+NET_OK=0
+REAP_AFTER=300
+WAKE=1
+KILLSWITCH=1
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --allowlist)   ALLOWLIST="${2:?--allowlist needs a value}"; shift 2 ;;
+    --net)         NET_OK=1; shift ;;
+    --no-net)      NET_OK=0; shift ;;
+    --reap-after)  REAP_AFTER="${2:?--reap-after needs a value}"; shift 2 ;;
+    --no-wake)     WAKE=0; shift ;;
+    --no-killswitch) KILLSWITCH=0; shift ;;
+    *) echo "[redshirt] unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
+case "$HOURS" in ''|*[!0-9]*) echo "[redshirt] <hours> must be a non-negative integer" >&2; exit 2 ;; esac
+
 REPO="https://github.com/SuperInstance/redshirt.git"
 DIR="$HOME/.redshirt"
 
@@ -101,6 +131,9 @@ if [ -z "$SPEND_LINES" ]; then
 fi
 
 # ============================================================ the page
+NET_WORD="disabled"; [ "$NET_OK" = "1" ] && NET_WORD="ENABLED for tasks"
+WAKE_WORD="on (outbound-only, ~5s wake)"; [ "$WAKE" = "0" ] && WAKE_WORD="off (plain 60s polling)"
+KS_WORD="ARMED (external dead-man's switch)"; [ "$KILLSWITCH" = "0" ] && KS_WORD="OFF — the timebox is just a promise"
 cat <<PAGE
 ================================================================
   REDSHIRT INSTALL CEREMONY — what you are about to grant
@@ -121,6 +154,13 @@ FILESYSTEM — where the node can write
   home directory: $FS_HOME (writable: $FS_HOME_WRITABLE, free: $FS_HOME_FREE)
   root privileges: $FS_ROOT_YOU
   scope of install: ~/.redshirt/ only — it will not touch the rest
+
+TASK SCOPE — the blinders this node installs with
+  command allowlist : $ALLOWLIST
+  task network      : $NET_WORD
+  stale-claim reap  : ${REAP_AFTER}s (scavenger requeues silent claims)
+  wake trigger      : $WAKE_WORD
+  kill switch       : $KS_WORD
 
 CREDENTIALS — what the node can see (names only, values never shown)
   ssh keys (~/.ssh): $SSH_KEYS
@@ -191,6 +231,11 @@ HOURS=$HOURS
 STARTED=$(date -u +%s)
 REPO=$REPO
 WORKDIR=$DIR/work
+ALLOWLIST=$ALLOWLIST
+NET_OK=$NET_OK
+REAP_AFTER=$REAP_AFTER
+WAKE=$WAKE
+KILLSWITCH=$KILLSWITCH
 EOF
 chmod 600 "$DIR/config"
 
@@ -200,8 +245,26 @@ else
   git clone -q "$REPO" "$DIR/work"
 fi
 
-chmod +x "$DIR/work/redshirt.sh"
+for s in redshirt.sh sandbox.sh wake.sh reaper.sh killswitch.sh lib.sh; do
+  chmod +x "$DIR/work/$s"
+done
 
-nohup "$DIR/work/redshirt.sh" > "$DIR/poller.log" 2>&1 &
-echo "[redshirt] Node '$NAME' is live for ${HOURS}h. Polling tasks."
+# Start the poller in its OWN process group (setsid): the killswitch kills
+# the group, and the group includes the wake.sh child redshirt.sh spawns.
+setsid "$DIR/work/redshirt.sh" > "$DIR/poller.log" 2>&1 < /dev/null &
+POLLER_PID=$!
+echo "$POLLER_PID" > "$DIR/poller.pgid"   # with setsid, pgid == pid
+echo "[redshirt] Poller started (pid $POLLER_PID, pgid $POLLER_PID)."
+
+# Arm the external dead-man's switch in a separate process group so it can
+# never kill itself along with the poller.
+if [ "$KILLSWITCH" = "1" ]; then
+  setsid "$DIR/work/killswitch.sh" > "$DIR/killswitch.log" 2>&1 < /dev/null &
+  echo "[redshirt] Killswitch armed (pid $!)."
+else
+  echo "[redshirt] WARNING: killswitch disabled — the timebox is now just a promise."
+fi
+
+echo "[redshirt] Node '$NAME' is live for ${HOURS}h."
+echo "[redshirt] Task scope: allowlist=[$ALLOWLIST] net=$NET_WORD wake=$WAKE_WORD"
 echo "[redshirt] Log: $DIR/poller.log"
