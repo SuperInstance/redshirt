@@ -85,6 +85,7 @@ see [`board/README.md`](board/README.md).
 
 ## Docs
 
+- [Install ceremony](docs/install-ceremony.md) — the pre-install capability page, the witnessed yes, the non-interactive escape hatch.
 - [Sandbox scope](docs/sandbox.md) — one writable dir, allowlisted commands, no network unless flagged; worst case and residual risk.
 - [Wake trigger](docs/wake-trigger.md) — outbound-only wake within ~5s; degrade-to-polling failure mode.
 - [Reaper](docs/reaper.md) — stale-claim scavenger and self-burial.
