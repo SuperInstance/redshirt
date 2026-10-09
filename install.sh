@@ -60,6 +60,10 @@ net_github_https="no"
 if timeout 8 bash -c 'echo > /dev/tcp/github.com/443' 2>/dev/null; then
   net_github_https="yes — this machine can reach github.com:443"
 fi
+net_open_internet="no"
+if timeout 8 bash -c 'echo > /dev/tcp/one.one.one.one/443' 2>/dev/null; then
+  net_open_internet="yes — reaches the open internet beyond github"
+fi
 net_raw_source="no"
 if timeout 8 curl -sSIL -o /dev/null -w '%{http_code}' https://raw.githubusercontent.com/SuperInstance/redshirt/main/install.sh 2>/dev/null | grep -q '^2'; then
   net_raw_source="yes — the installer source itself is fetchable"
@@ -119,11 +123,22 @@ if command -v az >/dev/null 2>&1; then
   AZ_SUB="$(timeout 10 az account show --query name -o tsv 2>/dev/null || true)"
   [ -n "$AZ_SUB" ] && spend_add "Azure CLI signed in; subscription: ${AZ_SUB}"
 fi
-for v in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY DEEPSEEK_API_KEY; do
+for v in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY DEEPSEEK_API_KEY MINIMAX_API_KEY ZAI_API_KEY KIMI_API_KEY MOONSHOT_API_KEY; do
   if [ -n "${!v:-}" ]; then
     spend_add "${v} is set in the environment (paid API spend possible)"
   fi
 done
+# Cloud metadata: read-only probes of the link-local metadata endpoints.
+# If one answers, this is a cloud VM with a provider identity the node
+# inherits — instance roles, attached service accounts, project membership.
+CLOUD_METADATA="none detected"
+if timeout 5 curl -s -o /dev/null http://169.254.169.254/latest/meta-data/ 2>/dev/null; then
+  CLOUD_METADATA="AWS-style metadata endpoint answers — this VM has an AWS identity"
+elif timeout 5 curl -s -o /dev/null -H 'Metadata: true' 'http://169.254.169.254/metadata/instance?api-version=2021-02-01' 2>/dev/null; then
+  CLOUD_METADATA="Azure metadata endpoint answers — this VM has an Azure identity"
+elif timeout 5 curl -s -o /dev/null -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/ 2>/dev/null; then
+  CLOUD_METADATA="GCE metadata endpoint answers — this VM has a Google identity"
+fi
 if [ -z "$SPEND_LINES" ]; then
   SPEND_LINES="  - none detected by these probes
     (anything you add to this machine later is inherited too)
@@ -144,6 +159,7 @@ Timebox:    $HOURS hours, then it dies. No residue except this repo.
 
 NETWORK — what the node can reach
   github.com:443 : $net_github_https
+  open internet : $net_open_internet
   installer source: $net_raw_source
   DNS             : $net_dns
   proxy variables : $PROXY_VARS
@@ -170,6 +186,7 @@ CREDENTIALS — what the node can see (names only, values never shown)
   claude cli: $CLAUDE_CLI
 
 SPEND AUTHORITY — what the node could cost you
+  cloud metadata  : $CLOUD_METADATA
 $SPEND_LINES
 The node pulls tasks from the redshirt repo and runs them. A task that
 says "run:" can run any shell command with the above reach. A task that
