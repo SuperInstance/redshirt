@@ -32,13 +32,35 @@ degrades loudly otherwise.
 ## Residual risk (degraded mode)
 
 On kernels where `unshare` is blocked (some hardened VMs/containers), the
-sandbox runs `shim+env` only. That still enforces the command allowlist and
-the network stubs — `rm -rf ~` fails (rm is not allowlisted), `curl evil.com`
-fails (stub) — but it **cannot** stop an allowlisted interpreter from writing
-to world-writable paths: `python3 -c 'open("/tmp/x","w")'` will succeed.
-If you need full containment, run the redshirt on a userns-capable kernel;
-check the result file's `sandbox: layers active:` line to see which stack a
-task actually ran under.
+sandbox runs `shim+env` only — and the shim layer must be understood for
+what it is: it stops **naive** commands, not a determined one. Verified by
+probe on 2026-10-08 (degraded mode forced by hiding `unshare` from PATH):
+
+- `rm -rf ~` fails loudly (exit 127, "not found") — `rm` is not allowlisted.
+- `curl evil.com` fails loudly (exit 126, "network access is DISABLED") —
+  the stub intercepts PATH-based lookups.
+- **But** a task that resets PATH or uses absolute paths bypasses both:
+  `/bin/rm -f /tmp/canary` **deleted the file** (exit 0), and
+  `/usr/bin/curl http://127.0.0.1:18711/` returned **HTTP 200** despite
+  `NET_OK=0`. Without namespaces there is no way to stop same-uid `sh -c`
+  from doing this — the shim is a policy hint, not containment.
+
+In full `shim+env+mountns+netns` mode the same probes are contained: PATH
+resets and absolute paths still run (e.g. `PATH=/usr/bin rm -rf ~/pwned`
+exits 0) but can only touch the workdir — `HOME` is the task folder, outside
+writes fail with "Read-only file system", and absolute-path `curl` dies in
+the netns.
+
+## Fail closed: --strict
+
+`install.sh --strict` (config `STRICT=1`, passed as `RS_STRICT`) makes the
+sandbox refuse to run at all when namespaces are unavailable (exit 126,
+loud on stderr, captured into the outbox result) instead of running
+degraded. Default is `--no-strict`: degraded runs with the loud warning
+above, because some hosts genuinely lack userns and the redshirt is still
+useful there — but the operator has seen the residual risk stated plainly
+in the install ceremony ("strict sandbox" line) before witnessing the
+grant.
 
 ## Verifying
 

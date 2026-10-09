@@ -91,4 +91,66 @@ fi
 
 echo "---"
 echo "sandbox tests: $PASS passed, $FAIL failed, $SKIP skipped"
+
+# --- degraded-mode contract (namespaces forced off by hiding unshare) ------
+# A bindir WITHOUT unshare makes can_ns() fail, exercising the fallback.
+DT="$(mktemp -d)"
+DB="$DT/bindir"; mkdir -p "$DB"
+for c in bash sh mkdir rm chmod ln cat id env; do
+  p="$(command -v "$c" 2>/dev/null || true)"
+  [ -n "$p" ] && ln -s "$p" "$DB/$c"
+done
+
+dsb() {  # dsb <workdir> <strict> -- <cmd...>
+  local wd="$1" strict="$2"; shift 2; shift  # drop the --
+  mkdir -p "$wd"
+  env PATH="$DB" RS_WORKDIR="$wd" RS_NET_OK=0 RS_ALLOWLIST="" RS_STRICT="$strict" "$SB" "$@"
+}
+
+# D1. degraded warning is honest about the bypass (not "still enforces")
+dsb "$DT/d1" 0 -- sh -c 'true' >"$DT/o1" 2>"$DT/e1"
+grep -q "BYPASSES" "$DT/e1" && ok "degraded warning states the absolute-path bypass" \
+  || no "degraded warning honesty (see $DT/e1)"
+
+# D2. strict=1 fails closed with 126 when namespaces are unavailable
+if dsb "$DT/d2" 1 -- sh -c 'echo should-not-run' >"$DT/o2" 2>"$DT/e2"; then
+  no "strict refusal (task ran!)"
+else
+  rc=$?
+  if [ "$rc" = "126" ] && grep -q "REFUSED" "$DT/e2"; then
+    ok "RS_STRICT=1 refuses degraded runs (exit 126)"
+  else
+    no "strict refusal mode (rc=$rc, see $DT/e2)"
+  fi
+fi
+
+# D3. even degraded, the naive headline attacks fail loudly
+if dsb "$DT/d3" 0 -- sh -c 'rm -rf ~' >"$DT/o3" 2>"$DT/e3"; then
+  no "degraded: rm -rf ~ refused (it succeeded!)"
+else
+  grep -q "not found" "$DT/e3" && ok "degraded: rm -rf ~ still fails loudly (127)" \
+    || no "degraded rm failure mode (see $DT/e3)"
+fi
+if dsb "$DT/d4" 0 -- sh -c 'curl http://127.0.0.1:9/' >"$DT/o4" 2>"$DT/e4"; then
+  no "degraded: curl refused (it succeeded!)"
+else
+  grep -q "DISABLED" "$DT/e4" && ok "degraded: PATH-based curl still hits the stub (126)" \
+    || no "degraded curl failure mode (see $DT/e4)"
+fi
+
+# D4. strict=1 does NOT block full namespace mode (ns available here)
+if unshare -U --map-user="$(id -u)" --map-group="$(id -g)" -m -n true 2>/dev/null; then
+  mkdir -p "$T/w10"
+  out="$(RS_WORKDIR="$T/w10" RS_NET_OK=0 RS_ALLOWLIST="" RS_STRICT=1 "$SB" sh -c 'echo fine' 2>"$T/e10")"
+  [ "$out" = "fine" ] && grep -q "mountns" "$T/e10" \
+    && ok "RS_STRICT=1 still runs under full namespaces" \
+    || no "strict+namespaces should run (see $T/e10)"
+else
+  skip "strict+namespaces run (no userns on this kernel)"
+fi
+
+rm -rf "$DT"
+
+echo "---"
+echo "sandbox tests (with degraded): $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]

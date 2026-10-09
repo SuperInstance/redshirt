@@ -105,6 +105,7 @@ run_task() {
     if [ -n "$claude_prompt" ]; then
       if printf '%s' "$ALLOWLIST" | grep -qw claude; then
         RS_WORKDIR="$OUTBOX/.task-$slug" RS_NET_OK="$NET_OK" RS_ALLOWLIST="$ALLOWLIST" \
+          RS_STRICT="${STRICT:-0}" \
           timeout 600 "$SCRIPT_DIR/sandbox.sh" claude -p "$claude_prompt" 2>&1 \
           || { rc=$?; echo "[redshirt] claude failed (rc=$rc)"; }
       else
@@ -114,6 +115,7 @@ run_task() {
     elif [ -n "$run_cmd" ]; then
       mkdir -p "$OUTBOX/.task-$slug"
       RS_WORKDIR="$OUTBOX/.task-$slug" RS_NET_OK="$NET_OK" RS_ALLOWLIST="$ALLOWLIST" \
+        RS_STRICT="${STRICT:-0}" \
         timeout 600 "$SCRIPT_DIR/sandbox.sh" sh -c "$run_cmd" 2>&1 \
         || { rc=$?; echo "[redshirt] command failed (rc=$rc)"; }
       rm -rf "$OUTBOX/.task-$slug"

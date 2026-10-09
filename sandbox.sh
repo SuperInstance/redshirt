@@ -1,7 +1,8 @@
 #!/bin/bash
 # sandbox.sh — layered execution sandbox for redshirt task commands.
 #
-# Usage: RS_WORKDIR=<taskdir> RS_NET_OK=0|1 RS_ALLOWLIST="git curl python3" \
+# Usage: RS_WORKDIR=<taskdir> RS_NET_OK=0|1 RS_ALLOWLIST="git curl python3"
+#        RS_STRICT=0|1 \
 #          sandbox.sh <command> [args...]
 #
 # Layers (applied best-effort, strongest first):
@@ -14,14 +15,21 @@
 #   4. scrubbed environment (always): env -i, HOME/TMPDIR pointed at the
 #      workdir so `~` never means the installer's home.
 #
-# Exit codes: the command's own, or 126 (blocked by policy), 127 (not
-# allowlisted / not found), 2 (sandbox misuse).
+# RS_STRICT=1 fails closed: if namespaces are unavailable the task is
+# refused (exit 126) instead of running degraded. Default 0: degraded runs
+# with a loud warning, and the warning is honest — without namespaces the
+# shim layer only stops *naive* commands; a task that resets PATH or uses
+# absolute paths (`/bin/rm`, `/usr/bin/curl`) bypasses it. See docs/sandbox.md.
+#
+# Exit codes: the command's own, or 126 (blocked by policy / strict refusal),
+# 127 (not allowlisted / not found), 2 (sandbox misuse).
 
 set -u
 
 WORKDIR="${RS_WORKDIR:?sandbox: RS_WORKDIR is not set}"
 NET_OK="${RS_NET_OK:-0}"
 ALLOWLIST="${RS_ALLOWLIST-git curl python3 claude}"
+STRICT="${RS_STRICT:-0}"
 LAYERS="shim+env"
 
 [ $# -ge 1 ] || { echo "sandbox: no command given" >&2; exit 2; }
@@ -102,11 +110,24 @@ NS_EOF
 fi
 
 # --- Fallback: shim + scrubbed env only ------------------------------------
+# Honest accounting: without namespaces the shim layer stops only *naive*
+# commands — a task that runs `PATH=/usr/bin rm ...` or `/bin/rm ...`
+# bypasses the allowlist, and `/usr/bin/curl ...` bypasses the network
+# stubs (both verified by probe, 2026-10-08). Real containment needs userns.
+# RS_STRICT=1 refuses to run at all instead of running degraded.
+if [ "$STRICT" = "1" ]; then
+  echo "sandbox: REFUSED (exit 126): kernel namespaces unavailable and" >&2
+  echo "sandbox: RS_STRICT=1 — fail closed rather than run degraded." >&2
+  echo "sandbox: run on a userns-capable kernel, or reinstall without --strict." >&2
+  exit 126
+fi
 echo "sandbox: WARNING: kernel namespaces unavailable — running DEGRADED (shim+env only)." >&2
-echo "sandbox: degraded mode still enforces the command allowlist and the network" >&2
-echo "sandbox: stubs, but CANNOT stop writes to world-writable dirs (e.g. /tmp)" >&2
-echo "sandbox: via allowlisted interpreters. Run on a userns-capable kernel for" >&2
-echo "sandbox: full containment. layers active: $LAYERS (workdir: $WORKDIR)" >&2
+echo "sandbox: degraded mode stops naive commands only: PATH-based 'rm' is not" >&2
+echo "sandbox: allowlisted (exit 127) and PATH-based 'curl' hits the stub (exit 126)," >&2
+echo "sandbox: but a task that resets PATH or uses absolute paths" >&2
+echo "sandbox: (/bin/rm, /usr/bin/curl) BYPASSES both. Pass RS_STRICT=1" >&2
+echo "sandbox: (--strict at install) to fail closed instead. layers: $LAYERS" >&2
+echo "sandbox: (workdir: $WORKDIR)" >&2
 cd "$WORKDIR" || exit 2
 # shellcheck disable=SC2093
 exec env -i PATH="$SHIM" HOME="$WORKDIR" TMPDIR="$WORKDIR" RS_SANDBOX=degraded "$@"

@@ -13,6 +13,8 @@
 # Options:
 #   --allowlist "git curl python3"  command allowlist for tasks (default: "git curl python3 claude")
 #   --net / --no-net                task network access (default: --no-net)
+#   --strict / --no-strict          fail closed when namespaces are unavailable
+#                                   (default: --no-strict, runs degraded w/ warning)
 #   --reap-after SECONDS             stale-claim threshold for the scavenger (default: 300)
 #   --no-wake                        disable the wake trigger (plain 60s polling)
 #   --no-killswitch                  disable the external dead-man's switch (NOT recommended:
@@ -29,6 +31,7 @@ shift 2 || true
 
 ALLOWLIST="git curl python3 claude"
 NET_OK=0
+STRICT=0
 REAP_AFTER=300
 WAKE=1
 KILLSWITCH=1
@@ -38,6 +41,8 @@ while [ $# -gt 0 ]; do
     --allowlist)   ALLOWLIST="${2:?--allowlist needs a value}"; shift 2 ;;
     --net)         NET_OK=1; shift ;;
     --no-net)      NET_OK=0; shift ;;
+    --strict)      STRICT=1; shift ;;
+    --no-strict)   STRICT=0; shift ;;
     --reap-after)  REAP_AFTER="${2:?--reap-after needs a value}"; shift 2 ;;
     --no-wake)     WAKE=0; shift ;;
     --no-killswitch) KILLSWITCH=0; shift ;;
@@ -147,6 +152,7 @@ fi
 
 # ============================================================ the page
 NET_WORD="disabled"; [ "$NET_OK" = "1" ] && NET_WORD="ENABLED for tasks"
+STRICT_WORD="off (degraded shim+env allowed, loudly)"; [ "$STRICT" = "1" ] && STRICT_WORD="ON — refuses to run without namespaces"
 WAKE_WORD="on (outbound-only, ~5s wake)"; [ "$WAKE" = "0" ] && WAKE_WORD="off (plain 60s polling)"
 KS_WORD="ARMED (external dead-man's switch)"; [ "$KILLSWITCH" = "0" ] && KS_WORD="OFF — the timebox is just a promise"
 cat <<PAGE
@@ -174,6 +180,7 @@ FILESYSTEM — where the node can write
 TASK SCOPE — the blinders this node installs with
   command allowlist : $ALLOWLIST
   task network      : $NET_WORD
+  strict sandbox    : $STRICT_WORD
   stale-claim reap  : ${REAP_AFTER}s (scavenger requeues silent claims)
   wake trigger      : $WAKE_WORD
   kill switch       : $KS_WORD
@@ -250,6 +257,7 @@ REPO=$REPO
 WORKDIR=$DIR/work
 ALLOWLIST=$ALLOWLIST
 NET_OK=$NET_OK
+STRICT=$STRICT
 REAP_AFTER=$REAP_AFTER
 WAKE=$WAKE
 KILLSWITCH=$KILLSWITCH
@@ -283,5 +291,5 @@ else
 fi
 
 echo "[redshirt] Node '$NAME' is live for ${HOURS}h."
-echo "[redshirt] Task scope: allowlist=[$ALLOWLIST] net=$NET_WORD wake=$WAKE_WORD"
+echo "[redshirt] Task scope: allowlist=[$ALLOWLIST] net=$NET_WORD strict=$STRICT_WORD wake=$WAKE_WORD"
 echo "[redshirt] Log: $DIR/poller.log"
