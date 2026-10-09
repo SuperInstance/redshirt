@@ -76,10 +76,12 @@ when stdin is not a terminal. Setting it is itself the grant.
 ## The captain's board
 
 Fleet state (live nodes, current tasks, timebox remaining, heartbeat age)
-is rendered from the heartbeat commits in this repo by the
-`SuperInstance/muse-workspace` `fleet-board/` generator. Heartbeats are
+is rendered from the heartbeat commits in this repo by
+[`board/generate-board.py`](board/generate-board.py), which writes
+[`BOARD.md`](BOARD.md). Heartbeats are
 `tasks/<name>/heartbeat.md` with machine-readable frontmatter
-(node, last, started, hours, task).
+(node, last, started, hours, task). Regenerate on a 5-minute cron —
+see [`board/README.md`](board/README.md).
 
 ## Docs
 
