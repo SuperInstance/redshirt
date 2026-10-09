@@ -45,20 +45,20 @@ never touches the machine directly.
 ## The install ceremony
 
 Installation is the permission grant, so the installer does not say yes
-blind. Before anything is written,  probes this machine —
+blind. Before anything is written, `install.sh` probes this machine —
 what it can reach (network), where it can write (filesystem scope), what
 credentials are visible (names only, never values), and what spend
 authority it could inherit — prints it in plain words on one page, and
 pauses for an explicit witnessed yes: you type the node name. A receipt
-lands in .
+lands in `~/.redshirt/grant-receipt.md`.
 
-Non-interactive installs:  skips the prompt only
+Non-interactive installs: `REDSHIRT_ASSUME_YES=1` skips the prompt only
 when stdin is not a terminal. Setting it is itself the grant.
 
 ## The captain's board
 
 Fleet state (live nodes, current tasks, timebox remaining, heartbeat age)
-is rendered from the heartbeat commits in this repo by
-'s  generator. Heartbeats are
- with machine-readable frontmatter
+is rendered from the heartbeat commits in this repo by the
+`SuperInstance/muse-workspace` `fleet-board/` generator. Heartbeats are
+`tasks/<name>/heartbeat.md` with machine-readable frontmatter
 (node, last, started, hours, task).
