@@ -41,3 +41,24 @@ run: echo hello && uname -a
 Star Trek: the disposable crew member who beams down, does the job, doesn't
 come back. The node is expendable. The git repo is the ledger. The zero agent
 never touches the machine directly.
+
+## The install ceremony
+
+Installation is the permission grant, so the installer does not say yes
+blind. Before anything is written,  probes this machine —
+what it can reach (network), where it can write (filesystem scope), what
+credentials are visible (names only, never values), and what spend
+authority it could inherit — prints it in plain words on one page, and
+pauses for an explicit witnessed yes: you type the node name. A receipt
+lands in .
+
+Non-interactive installs:  skips the prompt only
+when stdin is not a terminal. Setting it is itself the grant.
+
+## The captain's board
+
+Fleet state (live nodes, current tasks, timebox remaining, heartbeat age)
+is rendered from the heartbeat commits in this repo by
+'s  generator. Heartbeats are
+ with machine-readable frontmatter
+(node, last, started, hours, task).
